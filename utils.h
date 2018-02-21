@@ -2,11 +2,6 @@ using namespace std;
 using namespace cv;
 
 #define WINDOW_SIZE 9
-#define MAX_DISP 1
-#define MAX_N 1
-#define MIN_N 0
-#define MAX_Z 1
-#define MIN_Z 0
 
 
 
@@ -29,9 +24,9 @@ struct planemap{
 	plane ** r_planes;
 };
 
-struct dispmap{
-	Mat l_disp;
-	Mat r_disp;
+struct costmap{
+	Mat l_cost;
+	Mat r_cost;
 };
 
 
