@@ -24,6 +24,7 @@
 #define MIN_N 0
 #define MAX_Z 1//take a look at these two
 #define MIN_Z 0
+#define INFINITY std::numeric_limits<double>::infinity()
 
 #define MAX_DISP 1
 
@@ -48,8 +49,6 @@ int get_corresponding(int x, double disp, int view, int width){
 	return cor;
 }
 
-void cost_check(Point2d p, plane f, plane g){
-}
 
 /*/
  * ‌mark invalid the disparity for pixels which their disparity has a long distance
@@ -61,15 +60,48 @@ void right_left_check(Mat image, plane ** ‌‌planes[], Mat dm[]){
 			for(int j = 0; j < image.cols; j++){
 				int cor = get_corresponding(j, double(dm[v][i][j]), v, image.cols); //second guess
 				if(fabs(double(dm[v][i][j]) - double(dm[(v+1)%2][i][cor])) > 1){
-					dm[v][i][j] = std::numeric_limits<double>::infinity(); // invalid
+					dm[v][i][j] = INFINITY; // invalid
 				}
 			}
 		}
 	}
 }
 
-void fill_invalid_disp(Mat dm[]){
-	‌
+
+int find_valid_right(int row, int location, Mat dm){
+	int i = 0;
+	while(dm[row][location + i] < INFINITY | location + i < dm.cols) i ++;
+	return location + i;
+}
+
+int find_valid_left(int row, int location, Mat dm){
+	int i = 0;
+	while(dm[row][location + i] < INFINITY | location + i < dm.cols) i --;
+	return location + i;
+}
+void fill_invalid_disp(Mat image, plane ** planes[] ,Mat dm[]){
+	for (int v = 0; v < 2; v ++) {
+		for (int i = 0; i < image.rows; i++) {
+			for (int j = 0; j < image.cols; j++) {
+				if(dm[v][i][j] == INFINITY){
+					int l_valid = find_valid_left(i, j, dm[v]);
+					int r_valid = find_valid_right(i, j, dm[v]);
+					double l_cost = matching_cost(Point2d(l_valid, i), planes [v][i][l_valid]);
+					double r_cost = matching_cost(Point2d(r_valid, i), planes[v][i][r_valid]));
+					if(l_cost > r_cost){
+						plane p = planes[v][i][r_valid];
+						planes[v][i][j].updateplane(p.n, p.z);
+						dm[v][i][j] = disparity(Point2d(j, i), p);
+					}else{
+						plane p = planes[v][i][l_valid];
+						planes[v][i][j].updateplane(p.n, p.z);
+						dm[v][i][j] = disparity(Point2d(j, i), p);
+					}
+				}
+			}
+		}
+	}
+‌
 }
 
 /*
@@ -79,7 +111,7 @@ void fill_invalid_disp(Mat dm[]){
  */
 void patchmatch_pp(Mat image, plane ** planes[], Mat dm[]){
 	right_left_check(image, planes, dm);
-	fill_invalid_disp();
+	fill_invalid_disp(image, planes, dm);
 }
 
 void extract_disparity_map(Mat image, plane ** planes[], Mat dm[]){
