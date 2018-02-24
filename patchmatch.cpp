@@ -26,28 +26,10 @@
 #define MIN_Z 0
 #define INFINITY std::numeric_limits<double>::infinity()
 
-#define MAX_DISP 1
 
 using namespace std;
 using namespace cv;
 
-/*
- * get corresponding point in the other view for a given point
- */
-int get_corresponding(int x, double disp, int view, int width){
-	int cor;
-	if(view == 0){
-		cor = x + ceil(disp);
-	}else{
-		cor = x - ceil(disp);
-	}
-	if(cor > width){
-		cor = cor - width;
-	}else if(cor < 0){
-		cor = cor + width;
-	}
-	return cor;
-}
 
 
 /*/
@@ -67,7 +49,6 @@ void right_left_check(Mat image, plane ** ‌‌planes[], Mat dm[]){
 	}
 }
 
-
 int find_valid_right(int row, int location, Mat dm){
 	int i = 0;
 	while(dm[row][location + i] < INFINITY | location + i < dm.cols) i ++;
@@ -86,8 +67,8 @@ void fill_invalid_disp(Mat image, plane ** planes[] ,Mat dm[]){
 				if(dm[v][i][j] == INFINITY){
 					int l_valid = find_valid_left(i, j, dm[v]);
 					int r_valid = find_valid_right(i, j, dm[v]);
-					double l_cost = matching_cost(Point2d(l_valid, i), planes [v][i][l_valid]);
-					double r_cost = matching_cost(Point2d(r_valid, i), planes[v][i][r_valid]));
+					double l_cost = matching_cost(image, v, Point2d(l_valid, i), planes [v][i][l_valid]);
+					double r_cost = matching_cost(image, v, Point2d(r_valid, i), planes[v][i][r_valid]));
 					if(l_cost > r_cost){
 						plane p = planes[v][i][r_valid];
 						planes[v][i][j].updateplane(p.n, p.z);
@@ -139,8 +120,8 @@ void spatial_propagate(Mat image, Mat cost, plane ** planes, int iter){
 		//starting second row and column
 		for(int i = 1; i < image.cols; i++){
 			for(int j = 1; j < image.rows; j++){
-				double lcost = matching_cost(Point2d(j, i), planes[i - 1][j]);
-				double ucost = matching_cost(Point2d(j, i), planes[i][j - 1]);
+				double lcost = matching_cost(image, Point2d(j, i), planes[i - 1][j]);
+				double ucost = matching_cost(image, Point2d(j, i), planes[i][j - 1]);
 				if(lcost < ucost){
 					if(lcost < cost[i][j]){
 						//propagate left plane
@@ -156,7 +137,7 @@ void spatial_propagate(Mat image, Mat cost, plane ** planes, int iter){
 		}
 		//first row
 		for(int i = 1; i < image.cols; i++){
-			double lcost = matching_cost(Point2d(0, i), planes[i - 1][0]);
+			double lcost = matching_cost(image, Point2d(0, i), planes[i - 1][0]);
 			if(lcost < cost[i][0]){
 				planes[i][0].updateplane(planes[i - 1][0].n, planes[i - 1][0].z);
 				update_cost(i, 0, cost, lcost);
@@ -165,7 +146,7 @@ void spatial_propagate(Mat image, Mat cost, plane ** planes, int iter){
 		}
 		//first col
 				for(int j = 1; j < image.rows; j++){
-					double ucost = matching_cost(Point2d(j,0), planes[0][j - 1]);
+					double ucost = matching_cost(image, Point2d(j,0), planes[0][j - 1]);
 					if(ucost < cost[0][j]){
 						planes[0][j].updateplane(planes[0][j - 1].n, planes[0][j - 1].z);
 						update_cost(0, j, cost, ucost);
@@ -176,8 +157,8 @@ void spatial_propagate(Mat image, Mat cost, plane ** planes, int iter){
 			//starting second row and column from the end
 			for(int i = image.cols - 2; i < -1; i--){
 				for(int j = image.rows -2; j < -1; j--){
-					double rcost = matching_cost(Point2d(j, i), planes[i + 1][j]);
-					double lcost = matching_cost(Point2d(j, i), planes[i][j + 1]);
+					double rcost = matching_cost(image, Point2d(j, i), planes[i + 1][j]);
+					double lcost = matching_cost(image, Point2d(j, i), planes[i][j + 1]);
 					if(rcost < lcost){
 						if(rcost < cost[i][j]){
 							//propagate right plane
@@ -194,14 +175,14 @@ void spatial_propagate(Mat image, Mat cost, plane ** planes, int iter){
 			}
 			//last row
 			for(int i = image.cols - 1; i < -1; i--){
-				double rcost = matching_cost(Point2d(0, i), planes[i + 1][0]);
+				double rcost = matching_cost(image, Point2d(0, i), planes[i + 1][0]);
 				if(rcost < cost[i][0])
 					planes[i][0].updateplane(planes[i + 1][0].n, planes[i + 1][0].z);
 					update_cost(i, 0, cost, rcost);
 			}
 			//last col
 					for(int j = image.rows; j < -1; j--){
-						double lcost = matching_cost(Point2d(j, 0), planes[0][j + 1]);
+						double lcost = matching_cost(image, Point2d(j, 0), planes[0][j + 1]);
 						if(lcost < cost[0][j])
 							planes[0][j].updateplane(planes[0][j + 1].n, planes[0][j + 1].z);
 							update_cost(0, j, cost, lcost);
@@ -222,7 +203,7 @@ void view_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
 				plane other_view = pm[(view + 1)%2][i][j]; //plane map of the other view
 				double disp = disparity(Point2d(j, i), other_view);
 				int cor = get_corresponding(j, disp, (view +1) % 2, image.cols);//get corresponding pixel in the reference view
-				double other_cost = matching_cost(Point2d(cor, i), pm[view][cor][j]);
+				double other_cost = matching_cost(image, view, Point2d(cor, i), pm[view][cor][j]);
 				if(other_cost < cost[i][cor]){
 					pm[view][i][j].updateplane(other_view.n, other_view.z);
 					update_cost(i, j, cost, other_cost);
@@ -238,7 +219,7 @@ void view_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
 				double disp = disparity(Point2d(j, i), other_view);
 				int cor = get_corresponding(j, disp, (view +1) % 2, image.cols);//get corresponding pixel in the reference view
 				//double ref_cost = matching_cost(Point2d(cor,i), other_view);
-				double other_cost = matching_cost(Point2d(cor, i), pm[view][cor][j]);
+				double other_cost = matching_cost(image,view, Point2d(cor, i), pm[view][cor][j]);
 				if(other_cost < cost[i][cor]){
 					pm[view][i][j].updateplane(other_view.n, other_view.z);
 					update_cost(i, j, cost, other_cost);
@@ -267,7 +248,7 @@ void refine_plane(Mat image, Mat cost, plane ** pm){
 				n_rand[1] = pm[i][j].n[1] +random_generator(-1 * n_max, n_max);
 				n_rand[2] = pm[i][j].n[2] +random_generator(-1 * n_max, n_max);
 				plane rand_plane = plane(z_rand, n_rand);
-				double rand_cost = matching_cost(Point2d(j, i), rand_plane);
+				double rand_cost = matching_cost(image, Point2d(j, i), rand_plane);
 				if (cost[i][j] > rand_cost){
 					pm[i][j].n = n_rand;
 					pm[i][j].z = z_rand;
@@ -303,7 +284,7 @@ void initial_plane(Mat image, plane ** planes, Mat cost){
 			n[2] = random_generator(MIN_N, MAX_N);
 			z = random_generator(MIN_Z, MAX_Z);
 			planes[i][j] = plane(z, n);
-			cost[i][j] = matching_cost(Point2d(j, i), planes[i][j]);
+			cost[i][j] = matching_cost(image, Point2d(j, i), planes[i][j]);
 		}
 	}
 }
