@@ -115,13 +115,14 @@ void update_cost(int i, int j, Mat costm, double new_cost){
  * see if neighbor pixels have a better plane. check the upper, left pixels for even
  * iterations and lower, right pixels in odd iterations.
  */
-void spatial_propagate(Mat image, Mat cost, plane ** planes, int iter){
+void spatial_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
+	plane ** planes = pm[view];
 	if(iter == 0){ //even iterations
 		//starting second row and column
 		for(int i = 1; i < image.cols; i++){
 			for(int j = 1; j < image.rows; j++){
-				double lcost = matching_cost(image, Point2d(j, i), planes[i - 1][j]);
-				double ucost = matching_cost(image, Point2d(j, i), planes[i][j - 1]);
+				double lcost = matching_cost(image,view, Point2d(j, i), planes[i - 1][j]);
+				double ucost = matching_cost(image, view, Point2d(j, i), planes[i][j - 1]);
 				if(lcost < ucost){
 					if(lcost < cost[i][j]){
 						//propagate left plane
@@ -137,7 +138,7 @@ void spatial_propagate(Mat image, Mat cost, plane ** planes, int iter){
 		}
 		//first row
 		for(int i = 1; i < image.cols; i++){
-			double lcost = matching_cost(image, Point2d(0, i), planes[i - 1][0]);
+			double lcost = matching_cost(image, view, Point2d(0, i), planes[i - 1][0]);
 			if(lcost < cost[i][0]){
 				planes[i][0].updateplane(planes[i - 1][0].n, planes[i - 1][0].z);
 				update_cost(i, 0, cost, lcost);
@@ -146,7 +147,7 @@ void spatial_propagate(Mat image, Mat cost, plane ** planes, int iter){
 		}
 		//first col
 				for(int j = 1; j < image.rows; j++){
-					double ucost = matching_cost(image, Point2d(j,0), planes[0][j - 1]);
+					double ucost = matching_cost(image, view, Point2d(j,0), planes[0][j - 1]);
 					if(ucost < cost[0][j]){
 						planes[0][j].updateplane(planes[0][j - 1].n, planes[0][j - 1].z);
 						update_cost(0, j, cost, ucost);
@@ -157,8 +158,8 @@ void spatial_propagate(Mat image, Mat cost, plane ** planes, int iter){
 			//starting second row and column from the end
 			for(int i = image.cols - 2; i < -1; i--){
 				for(int j = image.rows -2; j < -1; j--){
-					double rcost = matching_cost(image, Point2d(j, i), planes[i + 1][j]);
-					double lcost = matching_cost(image, Point2d(j, i), planes[i][j + 1]);
+					double rcost = matching_cost(image, view, Point2d(j, i), planes[i + 1][j]);
+					double lcost = matching_cost(image, view, Point2d(j, i), planes[i][j + 1]);
 					if(rcost < lcost){
 						if(rcost < cost[i][j]){
 							//propagate right plane
@@ -175,14 +176,14 @@ void spatial_propagate(Mat image, Mat cost, plane ** planes, int iter){
 			}
 			//last row
 			for(int i = image.cols - 1; i < -1; i--){
-				double rcost = matching_cost(image, Point2d(0, i), planes[i + 1][0]);
+				double rcost = matching_cost(image, view, Point2d(0, i), planes[i + 1][0]);
 				if(rcost < cost[i][0])
 					planes[i][0].updateplane(planes[i + 1][0].n, planes[i + 1][0].z);
 					update_cost(i, 0, cost, rcost);
 			}
 			//last col
 					for(int j = image.rows; j < -1; j--){
-						double lcost = matching_cost(image, Point2d(j, 0), planes[0][j + 1]);
+						double lcost = matching_cost(image, view, Point2d(j, 0), planes[0][j + 1]);
 						if(lcost < cost[0][j])
 							planes[0][j].updateplane(planes[0][j + 1].n, planes[0][j + 1].z);
 							update_cost(0, j, cost, lcost);
@@ -235,7 +236,8 @@ void view_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
  * refining plane parameters after view and spatial propagations using random values in
  * a certain range.
  */
-void refine_plane(Mat image, Mat cost, plane ** pm){
+void refine_plane(Mat image, Mat cost, plane ** pm[], int view){
+	plane ** planes = pm[view];
 	double z_max = MAX_DISP/2;
 	double n_max = MAX_N;
 	double z_rand;
@@ -243,15 +245,15 @@ void refine_plane(Mat image, Mat cost, plane ** pm){
 	for(int i = 0; i < image.cols; i++){
 		for(int j = 0; j < image.rows; j++){
 			while(z_max > 0.1){
-				z_rand = pm[i][j].z + random_generator(-1 * z_max, z_max);
-				n_rand[0] = pm[i][j].n[0] +random_generator(-1 * n_max, n_max);
-				n_rand[1] = pm[i][j].n[1] +random_generator(-1 * n_max, n_max);
-				n_rand[2] = pm[i][j].n[2] +random_generator(-1 * n_max, n_max);
+				z_rand = planes[i][j].z + random_generator(-1 * z_max, z_max);
+				n_rand[0] = planes[i][j].n[0] +random_generator(-1 * n_max, n_max);
+				n_rand[1] = planes[i][j].n[1] +random_generator(-1 * n_max, n_max);
+				n_rand[2] = planes[i][j].n[2] +random_generator(-1 * n_max, n_max);
 				plane rand_plane = plane(z_rand, n_rand);
-				double rand_cost = matching_cost(image, Point2d(j, i), rand_plane);
+				double rand_cost = matching_cost(image,view, Point2d(j, i), rand_plane);
 				if (cost[i][j] > rand_cost){
-					pm[i][j].n = n_rand;
-					pm[i][j].z = z_rand;
+					planes[i][j].n = n_rand;
+					planes[i][j].z = z_rand;
 				}
 				z_max = z_max/2;
 				n_max = n_max/2;
@@ -264,16 +266,15 @@ void refine_plane(Mat image, Mat cost, plane ** pm){
  * each iteration of patchmatch algorithm
  */
 void patchmatch_iter(Mat img, Mat cost, plane ** pm[], int view, int iter){
-	plane ** planes = pm[view];
-	spatial_propagate(img, cost, planes, iter);
+	spatial_propagate(img, cost, pm , view, iter);
 	view_propagate(img, cost, pm, view, iter);
-	refine_plane(img, cost, planes);
+	refine_plane(img, cost, pm, view);
 }
 
 /*
  * randomly initial planes for each pixel in both views.
  */
-void initial_plane(Mat image, plane ** planes, Mat cost){
+void initial_plane(Mat image, plane ** pm[], int view, Mat cost){
 
 	for(int i = 0; i < image.rows ; i++){
 		for(int j = 0; j < image.cols; j ++){
@@ -283,16 +284,16 @@ void initial_plane(Mat image, plane ** planes, Mat cost){
 			n[1] = random_generator(MIN_N, MAX_N);
 			n[2] = random_generator(MIN_N, MAX_N);
 			z = random_generator(MIN_Z, MAX_Z);
-			planes[i][j] = plane(z, n);
-			cost[i][j] = matching_cost(image, Point2d(j, i), planes[i][j]);
+			pm[view][i][j] = plane(z, n);
+			cost[i][j] = matching_cost(image, view, Point2d(j, i), pm[view][i][j]);
 		}
 	}
 }
 
 void patchmatch(Mat r_img, Mat l_img, costmap cm, plane ** planes[], Mat dm[], int iter){
 
-	initial_plane(l_img, planes[0], cm.l_cost);
-	initial_plane(r_img, planes[1], cm.r_cost);
+	initial_plane(l_img, planes, 0, cm.l_cost);
+	initial_plane(r_img, planes, 1, cm.r_cost);
 
 	for(int i = 0; i < iter; i++){
 		patchmatch_iter(l_img, cm.l_cost, planes, 0, iter % 2);
