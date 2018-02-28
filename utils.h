@@ -1,21 +1,25 @@
+#pragma  once
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
+
 using namespace std;
 using namespace cv;
 
-#define WINDOW_SIZE 9
+
+class plane{
+
+public:
+
+	plane(double pz, Vec3d pn): z(pz), n(pn){}
+	void update_plane(Vec3d n, double z);
+	void update_pramas();
+	Vec3d get_params();
 
 
-
-class plane {
-	public:
-		plane(double pz, Vec3d pn): z(pz), n(pn){}
-		void updateplane(Vec3d n, double z);
-		void updatepramas(Vec3d params);
-		Vec3d getparams();
-
-	private:
-			double z;
-			Vec3d n;
-			Vec3d params;
+	Point2d p;
+	double z;
+	Vec3d n;
+	Vec3d params; //a, b, c
 
 };
 
@@ -25,21 +29,8 @@ struct planemap{
 };
 
 struct costmap{
-	Mat l_cost;
-	Mat r_cost;
+	double ** l_cost;
+	double ** r_cost;
 };
-
-
-class Window{
-	Point3d * w;
-
-	public:
-		Point2d get_point(int i);
-};
-
-
-double color_dif(Point2d p, Point2d q);
-
-double gray_dif(Point2d p, Point2d q);
 
 double random_generator(double min_range, double max_range);

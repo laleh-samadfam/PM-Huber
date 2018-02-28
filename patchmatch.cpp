@@ -13,8 +13,6 @@
 #include <sstream>
 #include <unistd.h>
 #include <math.h>
-#include <opencv2/core/core.hpp>
-#include <opencv2/highgui/highgui.hpp>
 #include "cost.h"
 #include "utils.h"
 #include "patchmatch.h"
@@ -24,7 +22,7 @@
 #define MIN_N 0
 #define MAX_Z 1//take a look at these two
 #define MIN_Z 0
-#define INFINITY std::numeric_limits<double>::infinity()
+//#define INFINITY std::numeric_limits<double>::infinity()
 
 
 using namespace std;
@@ -36,8 +34,8 @@ using namespace cv;
  * ‌mark invalid the disparity for pixels which their disparity has a long distance
  * with their correspondece.
  */
-void right_left_check(Mat image, plane ** ‌‌planes[], Mat dm[]){
-	for(int v = 0; v < 2; v ++){‌
+void right_left_check(Mat image, plane ** planes[], double ** dm[]){
+	for(int v = 0; v < 2; v ++){
 		for(int i = 0; i < image.rows; i++){
 			for(int j = 0; j < image.cols; j++){
 				int cor = get_corresponding(j, double(dm[v][i][j]), v, image.cols); //second guess
@@ -49,40 +47,40 @@ void right_left_check(Mat image, plane ** ‌‌planes[], Mat dm[]){
 	}
 }
 
-int find_valid_right(int row, int location, Mat dm){
+int find_valid_right(int row, int location, double ** dm, int width){
 	int i = 0;
-	while(dm[row][location + i] < INFINITY | location + i < dm.cols) i ++;
+	while((dm[row][location + i] < INFINITY) || location + i < width) i ++;
 	return location + i;
 }
 
-int find_valid_left(int row, int location, Mat dm){
+int find_valid_left(int row, int location, double ** dm, int width){
 	int i = 0;
-	while(dm[row][location + i] < INFINITY | location + i < dm.cols) i --;
+	while((dm[row][location + i] < INFINITY) || location + i < width) i --;
 	return location + i;
 }
-void fill_invalid_disp(Mat image, plane ** planes[] ,Mat dm[]){
+void fill_invalid_disp(Mat image, plane ** planes[] ,double ** dm[], int height){
 	for (int v = 0; v < 2; v ++) {
 		for (int i = 0; i < image.rows; i++) {
 			for (int j = 0; j < image.cols; j++) {
 				if(dm[v][i][j] == INFINITY){
-					int l_valid = find_valid_left(i, j, dm[v]);
-					int r_valid = find_valid_right(i, j, dm[v]);
+					int l_valid = find_valid_left(i, j, dm[v], height);
+					int r_valid = find_valid_right(i, j, dm[v], height);
 					double l_cost = matching_cost(image, v, Point2d(l_valid, i), planes [v][i][l_valid]);
-					double r_cost = matching_cost(image, v, Point2d(r_valid, i), planes[v][i][r_valid]));
+					double r_cost = matching_cost(image, v, Point2d(r_valid, i), planes[v][i][r_valid]);
 					if(l_cost > r_cost){
 						plane p = planes[v][i][r_valid];
-						planes[v][i][j].updateplane(p.n, p.z);
+						planes[v][i][j].update_plane(p.n, p.z);
 						dm[v][i][j] = disparity(Point2d(j, i), p);
 					}else{
 						plane p = planes[v][i][l_valid];
-						planes[v][i][j].updateplane(p.n, p.z);
+						planes[v][i][j].update_plane(p.n, p.z);
 						dm[v][i][j] = disparity(Point2d(j, i), p);
 					}
 				}
 			}
 		}
 	}
-‌
+
 }
 
 /*
@@ -90,12 +88,12 @@ void fill_invalid_disp(Mat image, plane ** planes[] ,Mat dm[]){
  * for the pixels witch have a long distance with their correspondence, then fill the
  * invalid disparities.
  */
-void patchmatch_pp(Mat image, plane ** planes[], Mat dm[]){
+void patchmatch_pp(Mat image, plane ** planes[], double ** dm[], int height){
 	right_left_check(image, planes, dm);
-	fill_invalid_disp(image, planes, dm);
+	fill_invalid_disp(image, planes, dm, height);
 }
 
-void extract_disparity_map(Mat image, plane ** planes[], Mat dm[]){
+void extract_disparity_map(Mat image, plane ** planes[], double ** dm[]){
 	for(int v = 0; v < 2; v ++){
 		for(int i = 0; i < image.cols; i++ ){
 			for(int j = 0; j < image.rows; j++){
@@ -107,7 +105,7 @@ void extract_disparity_map(Mat image, plane ** planes[], Mat dm[]){
 
 
 
-void update_cost(int i, int j, Mat costm, double new_cost){
+void update_cost(int i, int j, double ** costm, double new_cost){
 	costm[i][j] = new_cost;
 }
 
@@ -115,7 +113,7 @@ void update_cost(int i, int j, Mat costm, double new_cost){
  * see if neighbor pixels have a better plane. check the upper, left pixels for even
  * iterations and lower, right pixels in odd iterations.
  */
-void spatial_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
+void spatial_propagate(Mat image, double ** cost, plane ** pm[], int view, int iter){
 	plane ** planes = pm[view];
 	if(iter == 0){ //even iterations
 		//starting second row and column
@@ -126,12 +124,12 @@ void spatial_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
 				if(lcost < ucost){
 					if(lcost < cost[i][j]){
 						//propagate left plane
-						planes[i][j].updateplane(planes[i - 1][j].n, planes[i - 1][j].z);
+						planes[i][j].update_plane(planes[i - 1][j].n, planes[i - 1][j].z);
 						update_cost(i, j, cost, lcost);
 					}
 				}else if(ucost < cost[i][j]){
 					//propagate upper plane
-					planes[i][j].updateplane(planes[i][j - 1].n, planes[i][j-1].z);
+					planes[i][j].update_plane(planes[i][j - 1].n, planes[i][j-1].z);
 					update_cost(i, j, cost, ucost);
 				}
 			}
@@ -140,7 +138,7 @@ void spatial_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
 		for(int i = 1; i < image.cols; i++){
 			double lcost = matching_cost(image, view, Point2d(0, i), planes[i - 1][0]);
 			if(lcost < cost[i][0]){
-				planes[i][0].updateplane(planes[i - 1][0].n, planes[i - 1][0].z);
+				planes[i][0].update_plane(planes[i - 1][0].n, planes[i - 1][0].z);
 				update_cost(i, 0, cost, lcost);
 			}
 
@@ -149,7 +147,7 @@ void spatial_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
 				for(int j = 1; j < image.rows; j++){
 					double ucost = matching_cost(image, view, Point2d(j,0), planes[0][j - 1]);
 					if(ucost < cost[0][j]){
-						planes[0][j].updateplane(planes[0][j - 1].n, planes[0][j - 1].z);
+						planes[0][j].update_plane(planes[0][j - 1].n, planes[0][j - 1].z);
 						update_cost(0, j, cost, ucost);
 					}
 				}
@@ -163,13 +161,13 @@ void spatial_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
 					if(rcost < lcost){
 						if(rcost < cost[i][j]){
 							//propagate right plane
-							planes[i][j].updateplane(planes[i + 1][j].n, planes[i + 1][j].z);
+							planes[i][j].update_plane(planes[i + 1][j].n, planes[i + 1][j].z);
 							update_cost(i, j, cost, rcost);
 
 						}
 					}else if(lcost < cost[i][j]){
 						//propagate lower plane
-						planes[i][j].updateplane(planes[i][j + 1].n, planes[i][j + 1].z);
+						planes[i][j].update_plane(planes[i][j + 1].n, planes[i][j + 1].z);
 						update_cost(i, j, cost, lcost);
 					}
 				}
@@ -178,14 +176,14 @@ void spatial_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
 			for(int i = image.cols - 1; i < -1; i--){
 				double rcost = matching_cost(image, view, Point2d(0, i), planes[i + 1][0]);
 				if(rcost < cost[i][0])
-					planes[i][0].updateplane(planes[i + 1][0].n, planes[i + 1][0].z);
+					planes[i][0].update_plane(planes[i + 1][0].n, planes[i + 1][0].z);
 					update_cost(i, 0, cost, rcost);
 			}
 			//last col
 					for(int j = image.rows; j < -1; j--){
 						double lcost = matching_cost(image, view, Point2d(j, 0), planes[0][j + 1]);
 						if(lcost < cost[0][j])
-							planes[0][j].updateplane(planes[0][j + 1].n, planes[0][j + 1].z);
+							planes[0][j].update_plane(planes[0][j + 1].n, planes[0][j + 1].z);
 							update_cost(0, j, cost, lcost);
 					}
 		}
@@ -196,7 +194,7 @@ void spatial_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
  * see if the corresponding pixel in the other view has a better plane.
  * iterate over the other view to cover every corresponding pixel.
  */
-void view_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
+void view_propagate(Mat image, double ** cost, plane ** pm[], int view, int iter){
 	if(iter == 0){ //even iterations
 		//iterate over the other view
 		for(int i = 0; i < image.cols; i++){
@@ -206,7 +204,7 @@ void view_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
 				int cor = get_corresponding(j, disp, (view +1) % 2, image.cols);//get corresponding pixel in the reference view
 				double other_cost = matching_cost(image, view, Point2d(cor, i), pm[view][cor][j]);
 				if(other_cost < cost[i][cor]){
-					pm[view][i][j].updateplane(other_view.n, other_view.z);
+					pm[view][i][j].update_plane(other_view.n, other_view.z);
 					update_cost(i, j, cost, other_cost);
 				}
 			}
@@ -222,7 +220,7 @@ void view_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
 				//double ref_cost = matching_cost(Point2d(cor,i), other_view);
 				double other_cost = matching_cost(image,view, Point2d(cor, i), pm[view][cor][j]);
 				if(other_cost < cost[i][cor]){
-					pm[view][i][j].updateplane(other_view.n, other_view.z);
+					pm[view][i][j].update_plane(other_view.n, other_view.z);
 					update_cost(i, j, cost, other_cost);
 				}
 			}
@@ -236,7 +234,7 @@ void view_propagate(Mat image, Mat cost, plane ** pm[], int view, int iter){
  * refining plane parameters after view and spatial propagations using random values in
  * a certain range.
  */
-void refine_plane(Mat image, Mat cost, plane ** pm[], int view){
+void refine_plane(Mat image, double ** cost, plane ** pm[], int view){
 	plane ** planes = pm[view];
 	double z_max = MAX_DISP/2;
 	double n_max = MAX_N;
@@ -265,7 +263,7 @@ void refine_plane(Mat image, Mat cost, plane ** pm[], int view){
 /*
  * each iteration of patchmatch algorithm
  */
-void patchmatch_iter(Mat img, Mat cost, plane ** pm[], int view, int iter){
+void patchmatch_iter(Mat img, double ** cost, plane ** pm[], int view, int iter){
 	spatial_propagate(img, cost, pm , view, iter);
 	view_propagate(img, cost, pm, view, iter);
 	refine_plane(img, cost, pm, view);
@@ -274,7 +272,7 @@ void patchmatch_iter(Mat img, Mat cost, plane ** pm[], int view, int iter){
 /*
  * randomly initial planes for each pixel in both views.
  */
-void initial_plane(Mat image, plane ** pm[], int view, Mat cost){
+void initial_plane(Mat image, plane ** pm[], int view, double ** cost){
 
 	for(int i = 0; i < image.rows ; i++){
 		for(int j = 0; j < image.cols; j ++){
@@ -290,7 +288,7 @@ void initial_plane(Mat image, plane ** pm[], int view, Mat cost){
 	}
 }
 
-void patchmatch(Mat r_img, Mat l_img, costmap cm, plane ** planes[], Mat dm[], int iter){
+void patchmatch(Mat r_img, Mat l_img, costmap cm, plane ** planes[], double ** dm[], int iter, int height){
 
 	initial_plane(l_img, planes, 0, cm.l_cost);
 	initial_plane(r_img, planes, 1, cm.r_cost);
@@ -300,35 +298,34 @@ void patchmatch(Mat r_img, Mat l_img, costmap cm, plane ** planes[], Mat dm[], i
 		patchmatch_iter(r_img, cm.r_cost, planes, 1, iter % 2);
 	}
 	extract_disparity_map(r_img, planes, dm);
-	patchmatch_pp(r_img, planes, dm);
+	patchmatch_pp(r_img, planes, dm, height);
 }
 
 int main (int argc, char *argv[]){
 
 	Mat r_img, l_img;
 	int iter = 3;
-	int width, height;
+	int width;
 
-	if (argv != 3){
+	if (argc != 3){
 		cout << "You should provide two images as input";
-		return -1;
+	//	return -1;
 	}
-
+	cout << "here";
 	r_img = imread(argv[1], CV_LOAD_IMAGE_COLOR);
 	l_img = imread(argv[2], CV_LOAD_IMAGE_COLOR);
 
-	height = r_img.rows;
-	width = r_img.cols;
+	width = r_img.rows;
+	//width = r_img.cols;
 
 	costmap cm;
-	cm.l_cost = Mat::zeros(height, width, CV_8UC1);
-	cm.l_cost = Mat::zeros(height, width, CV_8UC1);
+	//cm.l_cost = Mat::zeros(height, width, CV_8UC1);
+	//cm.l_cost = Mat::zeros(height, width, CV_8UC1);
 
 	plane ** pm[2]; //plane maps, pm[0] is for left view and pm[1] is for left view
-	Mat dm[2]; //disparity map (output)
-	dm[0] = Mat::zeros(height, width, CV_8UC1);
-	dm[1] = Mat::zeros(height, width, CV_8UC1);
+	double ** dm[2]; //disparity map (output)
+	//initial_dm(); TODO
 	//planemap pm;
-	patchmatch(r_img, l_img, cm, pm, dm, iter);
+	patchmatch(r_img, l_img, cm, pm, dm, iter, width);
 
 }
